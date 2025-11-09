@@ -1,6 +1,6 @@
-## yellowsdk
+## yellow-ts
 
-TypeScript SDK that wraps `@erc7824/nitrolite` and uses `websocket-ts` for elegant backoff + reconnect, exposing an interface similar to `xrpl.js`.
+TypeScript SDK for Yellow.com Clearnet that wraps `@erc7824/nitrolite` and uses `websocket-ts` for elegant backoff + reconnect, exposing an interface similar to `xrpl.js`.
 
 - Works in Node.js and the browser
 - Reconnects automatically with exponential backoff
@@ -9,7 +9,7 @@ TypeScript SDK that wraps `@erc7824/nitrolite` and uses `websocket-ts` for elega
 ### Install
 
 ```bash
-npm install yellowsdk
+npm install yellow-ts
 # peer deps are installed automatically as regular deps:
 #   - websocket-ts
 #   - @erc7824/nitrolite
@@ -20,18 +20,12 @@ npm install yellowsdk
 CommonJS:
 
 ```js
-const { Client } = require("yellowsdk");
+const { Client } = require("yellow-ts");
 
 async function main() {
   // Defaults to ws://clearnet.yellow.com/ws if url is omitted
-  const client = new Client({ url: "ws://clearnet.yellow.com/ws" });
+  const client = new Client({ url: "wss://clearnet.yellow.com/ws" });
   await client.connect();
-
-  const response = await client.request({
-    command: "account_info",
-    account: "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
-    ledger_index: "validated"
-  });
 
   console.log(response);
   await client.disconnect();
@@ -43,7 +37,7 @@ main();
 ESM / TypeScript:
 
 ```ts
-import { Client } from "yellowsdk";
+import { Client } from "yellow-ts";
 
 const client = new Client({
   // url optional; defaults to ws://clearnet.yellow.com/ws
@@ -53,12 +47,6 @@ const client = new Client({
 });
 
 await client.connect();
-
-const res = await client.request({
-  command: "account_info",
-  account: "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe",
-  ledger_index: "validated"
-});
 
 console.log(res);
 await client.disconnect();
@@ -96,7 +84,7 @@ These tests connect to a live Yellow clearnet websocket. By default they use `ws
 export YELLOW_E2E=1
 
 # Optional (override default URL)
-export YELLOW_WS_URL="ws://clearnet.yellow.com/ws"
+export YELLOW_WS_URL="wss://clearnet.yellow.com/ws"
 
 # Optional (defaults to server_info)
 export YELLOW_WS_COMMAND="server_info"
