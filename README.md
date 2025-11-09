@@ -1,4 +1,4 @@
-## yellow-ts Yellow.com Clearnet SDK
+## yellow-ts - Yellow.com Clearnet SDK for Typescript
 
 TypeScript SDK for Yellow.com Clearnet that wraps `@erc7824/nitrolite` and uses `websocket-ts` for elegant backoff + reconnect, exposing an interface similar to `xrpl.js`.
 
