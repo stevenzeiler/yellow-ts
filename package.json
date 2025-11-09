@@ -1,0 +1,62 @@
+{
+  "name": "yellow-ts",
+  "version": "0.0.1",
+  "description": "TypeScript SDK wrapping @erc7824/nitrolite with websocket-ts (reconnect + backoff), providing an xrpl.js-like interface.",
+  "keywords": [
+    "xrpl",
+    "sdk",
+    "websocket",
+    "typescript",
+    "nitrolite",
+    "reconnect",
+    "backoff"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --dts --format esm,cjs --sourcemap",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "websocket-ts": "^2.0.0",
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "@erc7824/nitrolite": "*"
+  },
+  "peerDependenciesMeta": {
+    "@erc7824/nitrolite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/ws": "^8.5.12",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.1.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}
+
+
