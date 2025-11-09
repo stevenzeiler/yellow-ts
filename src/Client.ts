@@ -62,24 +62,17 @@ export class Client {
 		};
 
 		this.builder = new WebsocketBuilder(this.url)
-			.withWebsocketFactory(() => {
-				const WS: any = (globalThis as any).WebSocket;
-				if (!WS) {
-					throw new Error("WebSocket is not available");
-				}
-				return new WS(this.url);
-			})
 			.withBackoff(
 				new ExponentialBackoff(
 					this.options.backoff.initialDelayMs,
 					this.options.backoff.maxDelayMs
 				)
 			)
-			.onOpen((ws) => {
+			.onOpen((ws: Websocket, ev: Event) => {
 				this.ws = ws;
 				this.isConnected = true;
 			})
-			.onClose(() => {
+			.onClose((ws: Websocket, ev: CloseEvent) => {
 				this.isConnected = false;
 				this.ws = null;
 				// Reject in-flight requests on disconnect
@@ -89,10 +82,10 @@ export class Client {
 					this.pendingById.delete(id);
 				}
 			})
-			.onMessage((_, ev) => {
+			.onMessage((ws: Websocket, ev: MessageEvent) => {
 				this.handleMessage(ev.data);
 			})
-			.onError((_, ev) => {
+			.onError((ws: Websocket, ev: Event) => {
 				// Let consumer handle by awaiting connect/request rejections
 				// No-op here to avoid unhandled errors bubbling
 				void ev;
