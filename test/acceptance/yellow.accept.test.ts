@@ -67,6 +67,30 @@ suite("Yellow clearnet acceptance", () => {
 		const results = await Promise.all(reqs);
 		expect(results.length).toBe(3);
 	});
+
+	it("can register and unregister listeners", async () => {
+		expect(client).toBeTruthy();
+
+		let receivedMessages: any[] = [];
+		const callback = (message: any) => {
+			receivedMessages.push(message);
+		};
+
+		// Test registering a listener
+		const removeListener = client!.listen(callback);
+		expect(typeof removeListener).toBe("function");
+
+		// Test that we can call listen with event filter
+		const removeListener2 = client!.listen("someEvent", callback);
+		expect(typeof removeListener2).toBe("function");
+
+		// Test removing listeners
+		removeListener();
+		removeListener2();
+
+		// Listeners should be removed (though we can't easily test this without sending messages)
+		expect(receivedMessages.length).toBe(0);
+	});
 });
 
 

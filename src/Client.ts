@@ -1,4 +1,18 @@
 import { ExponentialBackoff, Websocket, WebsocketBuilder } from "websocket-ts";
+import * as nitrolite from "@erc7824/nitrolite";
+
+// Type definitions for nitrolite (since they're not exported)
+type NitroliteClientType = any;
+type CreateChannelParams = any;
+type CheckpointChannelParams = any;
+type ChallengeChannelParams = any;
+type ResizeChannelParams = any;
+type CloseChannelParams = any;
+type ChannelId = any;
+type State = any;
+type Hash = any;
+type AccountInfo = any;
+type NitroliteClientConfig = any;
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
@@ -26,6 +40,11 @@ export type ClientOptions = {
 		initialDelayMs?: number;
 		maxDelayMs?: number;
 	};
+	/**
+	 * Optional nitrolite client configuration for blockchain operations.
+	 * If provided, enables all nitrolite methods (deposit, createChannel, etc.).
+	 */
+	nitrolite?: NitroliteClientConfig;
 };
 
 type Pending = {
@@ -48,6 +67,8 @@ export class Client {
 	private isConnected = false;
 	private nextId = 1;
 	private pendingById: Map<number, Pending> = new Map();
+	private listeners: Array<{ event?: string; callback: Function }> = [];
+	private nitroliteClient?: NitroliteClientType;
 	private builder: WebsocketBuilder;
 
 	constructor(options?: ClientOptions) {
@@ -59,7 +80,15 @@ export class Client {
 				initialDelayMs: options?.backoff?.initialDelayMs ?? 1_000,
 				maxDelayMs: options?.backoff?.maxDelayMs ?? 30_000,
 			},
-		};
+		} as any; // Cast to any to allow nitrolite property
+
+		// Store nitrolite config separately
+		(this.options as any).nitrolite = options?.nitrolite;
+
+		// Initialize nitrolite client if configuration is provided
+		if (options?.nitrolite) {
+			this.nitroliteClient = new (nitrolite as any).NitroliteClient(options.nitrolite);
+		}
 
 		this.builder = new WebsocketBuilder(this.url)
 			.withBackoff(
@@ -130,6 +159,238 @@ export class Client {
 		}
 	}
 
+	/**
+	 * Listen for messages from the websocket.
+	 * @param event Optional event name to filter messages. If not provided, receives all messages.
+	 * @param callback Function to call when a message is received.
+	 * @returns A function to remove the listener.
+	 */
+	listen(event: string | undefined, callback: Function): () => void;
+	listen(callback: Function): () => void;
+	listen(eventOrCallback: string | Function | undefined, callback?: Function): () => void {
+		let event: string | undefined;
+		let cb: Function;
+
+		if (typeof eventOrCallback === 'function') {
+			cb = eventOrCallback;
+		} else {
+			event = eventOrCallback;
+			cb = callback!;
+		}
+
+		const listener = { event, callback: cb };
+		this.listeners.push(listener);
+
+		// Return a function to remove this listener
+		return () => {
+			const index = this.listeners.indexOf(listener);
+			if (index > -1) {
+				this.listeners.splice(index, 1);
+			}
+		};
+	}
+
+	// ========== Nitrolite Methods ==========
+
+	// ========== Deposit Methods ==========
+
+	/**
+	 * Deposits tokens or ETH into the custody contract. Automatically handles ERC-20 approval if necessary.
+	 * This is the first step in the channel lifecycle, as funds must be deposited before channels can be created.
+	 * Funds deposited are held in a custody contract until they are allocated to channels or withdrawn.
+	 * @param amount The amount to deposit
+	 * @returns Promise resolving to transaction hash
+	 */
+	async deposit(amount: bigint): Promise<Hash> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.deposit(amount);
+	}
+
+	/**
+	 * Manually approves the custody contract to spend the specified ERC-20 amount.
+	 * While the deposit method handles approvals automatically, this method gives developers explicit control over token approvals.
+	 * This is useful for implementing custom approval UX flows or for batching transactions with other operations.
+	 * @param amount The amount to approve
+	 * @returns Promise resolving to transaction hash
+	 */
+	async approveTokens(amount: bigint): Promise<Hash> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.approveTokens(amount);
+	}
+
+	/**
+	 * Gets the current allowance granted to the custody contract for the specified ERC20 token.
+	 * This is useful for implementing proper UX around approvals, checking if a user needs to approve tokens before depositing,
+	 * or verifying if existing approvals are sufficient for planned operations.
+	 * @returns Promise resolving to the allowance amount
+	 */
+	async getTokenAllowance(): Promise<bigint> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.getTokenAllowance();
+	}
+
+	/**
+	 * Gets the on-chain balance of the specified ERC-20 token for the connected wallet address.
+	 * This helps developers implement UX that shows users their available token balance before depositing,
+	 * ensuring they have sufficient funds for the operation. It's particularly useful for validating input amounts in deposit forms.
+	 * @returns Promise resolving to the token balance
+	 */
+	async getTokenBalance(): Promise<bigint> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.getTokenBalance();
+	}
+
+	// ========== Channel Creation Methods ==========
+
+	/**
+	 * Creates a new state channel on-chain. This is a critical step in the Nitrolite workflow that establishes a secure payment channel
+	 * between two participants. The method handles the complex process of constructing the initial state with proper allocations,
+	 * signing it, and submitting the transaction to the custody contract. Developers use this to enable high-throughput, low-latency applications
+	 * with instant payments between participants.
+	 * @param params Channel creation parameters
+	 * @returns Promise resolving to channel ID, initial state, and transaction hash
+	 */
+	async createChannel(params: CreateChannelParams): Promise<{ channelId: ChannelId; initialState: State; txHash: Hash }> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.createChannel(params);
+	}
+
+	/**
+	 * Combines deposit and channel creation into a single operation, optimizing the user experience by reducing the steps required.
+	 * This is ideal for applications where users start from scratch without existing deposits. It handles the entire initialization flow:
+	 * token approval (if needed), depositing funds to the custody contract, and creating the channel. This creates a smoother onboarding process for users
+	 * who want to start using your application immediately.
+	 * @param depositAmount The amount to deposit
+	 * @param params Channel creation parameters
+	 * @returns Promise resolving to channel info and transaction hashes
+	 */
+	async depositAndCreateChannel(
+		depositAmount: bigint,
+		params: CreateChannelParams
+	): Promise<{ channelId: ChannelId; initialState: State; depositTxHash: Hash; createChannelTxHash: Hash }> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.depositAndCreateChannel(depositAmount, params);
+	}
+
+	// ========== Channel Operation Methods ==========
+
+	/**
+	 * Checkpoints a channel state on-chain, creating a permanent on-chain record of the latest state.
+	 * This is essential for security and dispute resolution, as it provides an immutable record that both parties have agreed to the current channel state.
+	 * Use this method periodically during long-running channels to minimize risk, before large allocation changes, or when a participant will be offline for extended periods.
+	 * @param params Checkpoint parameters
+	 * @returns Promise resolving to transaction hash
+	 */
+	async checkpointChannel(params: CheckpointChannelParams): Promise<Hash> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.checkpointChannel(params);
+	}
+
+	/**
+	 * Initiates a challenge for a channel when the counterparty becomes unresponsive or refuses to cooperate.
+	 * This is a dispute resolution mechanism that allows a participant to force progress in the channel by submitting their latest signed state.
+	 * After challenge, the counterparty has a time window (challengeDuration) to respond with a later state, or the challenger's state will be considered final.
+	 * This method protects users from losing funds due to counterparty unavailability.
+	 * @param params Challenge parameters
+	 * @returns Promise resolving to transaction hash
+	 */
+	async challengeChannel(params: ChallengeChannelParams): Promise<Hash> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.challengeChannel(params);
+	}
+
+	/**
+	 * Adjusts the total funds allocated to a channel using a new agreed state. This is crucial for dynamic applications where funding requirements change over time.
+	 * Use this to add more funds to a channel that's running low (top-up), or to reduce the locked funds when less capacity is needed.
+	 * Resizing requires consensus from both participants and results in an on-chain transaction that updates the channel's total capacity.
+	 * @param params Resize parameters
+	 * @returns Promise resolving to transaction hash
+	 */
+	async resizeChannel(params: ResizeChannelParams): Promise<Hash> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.resizeChannel(params);
+	}
+
+	// ========== Channel Closing Methods ==========
+
+	/**
+	 * Gracefully closes a channel on-chain using a mutually agreed final state. This is the standard way to end a channel when both participants are cooperative.
+	 * The method submits the final state to the blockchain, which unlocks funds according to the agreed allocations and makes them available for withdrawal.
+	 * This method should be your go-to approach for ending channels in normal circumstances, as it's gas-efficient and immediately settles the final balances.
+	 * @param params Close channel parameters
+	 * @returns Promise resolving to transaction hash
+	 */
+	async closeChannel(params: CloseChannelParams): Promise<Hash> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.closeChannel(params);
+	}
+
+	// ========== Withdrawal Methods ==========
+
+	/**
+	 * Withdraws tokens previously deposited into the custody contract back to the user's wallet.
+	 * This allows users to reclaim their funds after channels have been closed. This method only affects available (unlocked) funds -
+	 * it cannot withdraw tokens that are still locked in active channels. Use this as the final step in the channel lifecycle to complete
+	 * the full deposit-use-withdraw flow and return funds to the user's control.
+	 * @param amount The amount to withdraw
+	 * @returns Promise resolving to transaction hash
+	 */
+	async withdrawal(amount: bigint): Promise<Hash> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.withdrawal(amount);
+	}
+
+	// ========== Account Information Methods ==========
+
+	/**
+	 * Retrieves a list of all channel IDs associated with the connected account.
+	 * This is essential for applications that need to monitor, display, or manage multiple channels simultaneously.
+	 * Use this to build dashboards showing all user channels, to implement batch operations on multiple channels, or to verify channel existence before performing operations.
+	 * @returns Promise resolving to array of channel IDs
+	 */
+	async getAccountChannels(): Promise<ChannelId[]> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.getAccountChannels();
+	}
+
+	/**
+	 * Provides a comprehensive view of the account's financial state within the Nitrolite system.
+	 * Returns information about available (unlocked) funds, funds locked in active channels, and the total number of channels.
+	 * This method is crucial for building UIs that show users their current balances and channel activity, for validating that sufficient funds are available before operations,
+	 * and for monitoring the overall health of the user's Nitrolite account.
+	 * @returns Promise resolving to account information
+	 */
+	async getAccountInfo(): Promise<AccountInfo> {
+		if (!this.nitroliteClient) {
+			throw new Error("Nitrolite client not configured. Provide nitrolite config in ClientOptions.");
+		}
+		return this.nitroliteClient.getAccountInfo();
+	}
+
 	async request<T = any>(request: RequestObject): Promise<T> {
 		if (!this.isConnected || !this.ws) {
 			await this.connect();
@@ -150,6 +411,19 @@ export class Client {
 
 		this.ws!.send(JSON.stringify(payload));
 		return result;
+	}
+
+	/**
+	 * Send a raw message over the websocket connection.
+	 * Unlike `request()`, this method does not expect a response and does not handle JSON-RPC correlation.
+	 * @param message The message to send (will be JSON.stringify'd if not a string)
+	 */
+	async sendMessage(message: any): Promise<void> {
+		if (!this.isConnected || !this.ws) {
+			await this.connect();
+		}
+		const data = typeof message === 'string' ? message : JSON.stringify(message);
+		this.ws!.send(data);
 	}
 
 	private async waitUntilOpen(timeoutMs: number): Promise<void> {
@@ -174,16 +448,48 @@ export class Client {
 			// Non-JSON payloads are ignored for request/response flow
 			return;
 		}
+
+		// Handle request/response correlation
 		const id = parsed?.id;
-		if (typeof id !== "number") return;
-		const pending = this.pendingById.get(id);
-		if (!pending) return;
-		this.pendingById.delete(id);
-		pending.timer && clearTimeout(pending.timer);
-		if (parsed?.status === "error" || parsed?.error) {
-			pending.reject(parsed);
-		} else {
-			pending.resolve(parsed);
+		if (typeof id === "number") {
+			const pending = this.pendingById.get(id);
+			if (pending) {
+				this.pendingById.delete(id);
+				pending.timer && clearTimeout(pending.timer);
+				if (parsed?.status === "error" || parsed?.error) {
+					pending.reject(parsed);
+				} else {
+					pending.resolve(parsed);
+				}
+			}
+		}
+
+		// Parse with nitrolite and call listeners
+		try {
+			const rpcMessage = (nitrolite as any).parseRPCResponse(data);
+
+			// Call listeners
+			for (const listener of this.listeners) {
+				try {
+					if (!listener.event || (rpcMessage as any)?.type === listener.event || (rpcMessage as any)?.event === listener.event) {
+						listener.callback(rpcMessage);
+					}
+				} catch (error) {
+					// Don't let listener errors break other listeners
+					console.warn('Listener error:', error);
+				}
+			}
+		} catch (parseError) {
+			// If parsing fails, still try to call listeners with raw parsed data
+			for (const listener of this.listeners) {
+				try {
+					if (!listener.event) {
+						listener.callback(parsed);
+					}
+				} catch (error) {
+					console.warn('Listener error:', error);
+				}
+			}
 		}
 	}
 }
