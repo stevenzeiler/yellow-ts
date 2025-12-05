@@ -7,7 +7,7 @@ export default defineConfig({
 		testTimeout: 60000,
 		hookTimeout: 60000,
 		include: ["test/**/*.test.ts"],
-		exclude: ["test/acceptance/**/*.test.ts"],
+		// exclude: ["test/acceptance/**/*.test.ts"],	
 	},
 });
 

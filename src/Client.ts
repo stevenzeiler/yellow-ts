@@ -69,7 +69,7 @@ export class Client {
 	private isConnecting = false;
 	private isConnected = false;
 	private nextId = 1;
-	private pendingById: Map<number, Pending> = new Map();
+	private pendingById: Map<number | string, Pending> = new Map();
 	private listeners: Array<{ event?: string; callback: Function }> = [];
 	private nitroliteClient?: NitroliteClient;
 	private builder: WebsocketBuilder;
@@ -419,13 +419,38 @@ export class Client {
 
 	/**
 	 * Send a raw message over the websocket connection.
-	 * Unlike `request()`, this method does not expect a response and does not handle JSON-RPC correlation.
+	 * If the message contains an `id` field, this method will wait for a response
+	 * with the matching id and return it. Otherwise, it sends without waiting.
 	 * @param message The message to send (will be JSON.stringify'd if not a string)
+	 * @returns Promise resolving to the response if message has an id, or void otherwise
 	 */
-	async sendMessage(message: any): Promise<void> {
+	async sendMessage<T = any>(message: any): Promise<T | void> {
 		if (!this.isConnected || !this.ws) {
 			await this.connect();
 		}
+		// Check if message has an id field for request/response correlation
+		const messageObj = typeof message === 'string' ? JSON.parse(message) : message;
+		const id = messageObj?.req[0];
+
+		if (typeof id === 'number' || typeof id === 'string') {
+			// Track this request and wait for corresponding response
+			const result = new Promise<T>((resolve, reject) => {
+				const timer =
+					this.options.requestTimeoutMs > 0
+						? setTimeout(() => {
+								this.pendingById.delete(id);
+								reject(new Error("Request timed out"));
+							}, this.options.requestTimeoutMs)
+						: null;
+				this.pendingById.set(id, { resolve, reject, timer });
+			});
+
+			const data = typeof message === 'string' ? message : JSON.stringify(message);
+			this.ws!.send(data);
+			return result;
+		}
+
+		// No id field - just send without waiting for response
 		const data = typeof message === 'string' ? message : JSON.stringify(message);
 		this.ws!.send(data);
 	}
@@ -444,40 +469,44 @@ export class Client {
 
 	private handleMessage(data: any): void {
 		let parsed: any = data;
+		var response: any;
+		var parsedRpcMethod: any;
 		try {
+
+			response = (nitrolite as any).parseAnyRPCResponse(data);
 			if (typeof data === "string") {
 				parsed = JSON.parse(data);
 			}
-		} catch {
+		} catch(error) {
+			console.error("Error parsing message", data);
+			console.error("Error", error);
 			// Non-JSON payloads are ignored for request/response flow
 			return;
 		}
 
 		// Handle request/response correlation
-		const id = parsed?.id;
-		if (typeof id === "number") {
+		const id = response.requestId
+
+		if (typeof id === "number" || typeof id === "string") {
 			const pending = this.pendingById.get(id);
 			if (pending) {
 				this.pendingById.delete(id);
 				pending.timer && clearTimeout(pending.timer);
 				if (parsed?.status === "error" || parsed?.error) {
-					pending.reject(parsed);
+					pending.reject(response);
 				} else {
-					pending.resolve(parsed);
+					pending.resolve(response);
 				}
 			}
 		}
 
 		// Parse with nitrolite and call listeners
 		try {
-			const rpcMessage = parseRPCResponse(JSON.parse(data));(data); 
-			const response: Response = (nitrolite as any).parseAnyRPCResponse(JSON.stringify(data));
-			
 
 			// Call listeners
 			for (const listener of this.listeners) {
 				try {
-					if (!listener.event || (rpcMessage as any)?.type === listener.event || (rpcMessage as any)?.event === listener.event) {
+					if (!listener.event || (parsedRpcMethod as any)?.type === listener.event || (parsedRpcMethod as any)?.event === listener.event) {
 						listener.callback(response);
 					}
 				} catch (error) {

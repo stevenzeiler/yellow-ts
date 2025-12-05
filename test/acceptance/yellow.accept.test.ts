@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "../../src/Client";
-import { RPCMethod } from "@erc7824/nitrolite";
+import { RPCMethod, SignatureParamFragment, createAuthRequestMessage, createAuthVerifyMessage, createEIP712AuthMessageSigner, createGetConfigMessage } from "@erc7824/nitrolite";
+import { generatePrivateKey } from "viem/accounts";
+import { createWalletClient, http } from "viem";
+import { base } from "viem/chains";
 
 const WS_URL = process.env.YELLOW_WS_URL || "wss://clearnet.yellow.com/ws";
 const suite =
@@ -27,7 +30,7 @@ function getCommand(): { command: string } & Record<string, any> {
 	return payload;
 }
 
-suite("Yellow clearnet acceptance", () => {
+describe("Yellow clearnet acceptance", () => {
 	let client: Client | null = null;
 
 	beforeAll(async () => {
@@ -91,6 +94,56 @@ suite("Yellow clearnet acceptance", () => {
 
 		// Listeners should be removed (though we can't easily test this without sending messages)
 		expect(receivedMessages.length).toBe(0);
+	});
+
+	it("sendMessage awaits and returns reply for messages with request id", async () => {
+		expect(client).toBeTruthy();
+
+		// generate random signer account using viem
+		const privateKey = generatePrivateKey();
+		const signer = createWalletClient({
+			account: privateKey,
+			chain: base,
+			transport: http()
+		});
+
+		const requestId = 12345;
+
+		const sessionKey = generatePrivateKey();
+		const session = createWalletClient({
+			account: sessionKey,
+			chain: base,
+			transport: http()
+		});
+
+		const sessionExpireTimestamp = String(Math.floor(Date.now() / 1000) + 3600);
+
+		const authParams = {
+			address: signer.account.address,
+			session_key: session.account.address,
+			application: 'Test app',
+			allowances: [{
+				asset: 'usdc',
+				amount: '0.01',
+			}],
+			expires_at: BigInt(sessionExpireTimestamp),
+			scope: 'test.app',
+        };
+
+        const eip712Signer = createEIP712AuthMessageSigner(signer, authParams, { name: "Test App" });
+		const getConfigMessage = await createAuthRequestMessage(authParams, requestId);
+ 
+		// sendMessage should send the message and await the reply with matching id
+		const response = await client!.sendMessage(getConfigMessage);
+		// Verify we got a response
+		expect(response).toBeTruthy();
+		expect(typeof response).toBe("object");
+
+		expect(response.requestId).toBe(requestId);
+		expect(response.method).toBe(RPCMethod.AuthChallenge);
+		expect(response.params.challengeMessage).toBeDefined();
+		// The response should have the same id as the request
+		//expect((response as any).id).toBe(message.id);
 	});
 });
 
