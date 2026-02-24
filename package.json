@@ -42,7 +42,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "-": "^0.0.1",
     "@erc7824/nitrolite": "^0.5.1",
     "websocket-ts": "^2.0.0",
     "ws": "^8.18.0"
