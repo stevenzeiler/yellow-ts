@@ -24,11 +24,12 @@ Guidance for AI agents working in this repo. Humans: see README.md.
 
 ```bash
 npm ci
-npm test            # vitest run; acceptance tests skip unless YELLOW_E2E=1
+npm test            # vitest run; needs network (see below)
+npx vitest run test/unit   # offline unit tests
 npm run build       # tsup, ESM + CJS + d.ts
 ```
 
-Both worked on 2026-11-20 (4 unit tests pass). Acceptance tests need the live `wss://clearnet.yellow.com/ws`.
+On 2026-11-20 the build worked and the 4 unit tests passed. The acceptance tests' `beforeAll` sits outside the skip guard, so it always connects to `wss://clearnet.yellow.com/ws` and `npm test` fails offline. Run `npx vitest run test/unit` when there is no network.
 
 ## Rules
 
@@ -36,7 +37,7 @@ Both worked on 2026-11-20 (4 unit tests pass). Acceptance tests need the live `w
 - Never commit secrets (wallet keys, seed phrases). Acceptance tests generate throwaway keys.
 - Use Conventional Commits.
 - Keep docs/STATUS.md current.
-- Keep `package.json` version, git tags and README install notes in step. Tag `v0.7.0` exists while package.json says 0.0.10.
+- Keep `package.json` version, git tags and npm in step. npm has 0.0.10, matching package.json, but a `v0.7.0` tag exists.
 
 ## What agents may and may not do
 
