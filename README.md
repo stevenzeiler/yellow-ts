@@ -1,12 +1,16 @@
-## yellow-ts - Yellow.com Clearnet SDK for Typescript
+# yellow-ts
 
 TypeScript SDK for Yellow.com Clearnet that wraps `@erc7824/nitrolite` and uses `websocket-ts` for elegant backoff + reconnect, exposing an interface similar to `xrpl.js`.
+
+**Status:** dormant since 2025-12 (first commit 2025-11-09, last 2025-12-05). `package.json` is at 0.0.10. Whether it is published to npm is unknown, so check before relying on `npm install yellow-ts`. Examples that use it: [yellow-sdk-tutorials](https://github.com/stevenzeiler/yellow-sdk-tutorials).
 
 - Works in Node.js and the browser
 - Reconnects automatically with exponential backoff
 - JSON-RPC-style `request` method with `id` correlation and timeouts
 
 ### Install
+
+From npm (if published, see status above):
 
 ```bash
 npm install yellow-ts
@@ -27,7 +31,7 @@ async function main() {
   const client = new Client({ url: "wss://clearnet.yellow.com/ws" })
   await client.connect();
 
-  console.log(response);
+  console.log("connected");
   await client.disconnect();
 }
 
@@ -126,6 +130,24 @@ This package targets both Node and browsers. It depends on `websocket-ts` under 
 
 Type definitions are included. `@erc7824/nitrolite` is also re-exported from the root as `nitrolite`.
 
+### Config
+
+The SDK itself reads no environment variables. Options go to `new Client({...})`: `url` (default `wss://clearnet.yellow.com/ws`), `requestTimeoutMs`, `backoff: { initialDelayMs, maxDelayMs }` (defaults 1 s and 30 s), and an optional `nitrolite` config for on-chain methods. Only the acceptance tests read `YELLOW_E2E`, `YELLOW_WS_URL`, `YELLOW_WS_COMMAND` and `YELLOW_WS_PARAMS`.
+
+### How it works
+
+`src/Client.ts` opens a websocket with `websocket-ts` (exponential backoff reconnect). Outgoing messages that carry an `id` are tracked in a pending map and resolved when a reply with the same `id` arrives, or rejected on timeout or disconnect. Incoming messages are parsed and handed to `listen` callbacks. On-chain helpers (deposit, create, resize, close channels) delegate to a `NitroliteClient`.
+
+### Develop
+
+```bash
+npm ci
+npm test          # unit tests run offline; acceptance tests are skipped unless YELLOW_E2E=1
+npm run build     # tsup, outputs ESM, CJS and types to dist/
+```
+
+On 2026-11-20 the unit tests (4) passed and the build succeeded on Node 22. The acceptance tests were not run.
+
 ### Build
 
 ```bash
@@ -150,6 +172,8 @@ npm test
 
 ### License
 
-MIT
+MIT, see [LICENSE](LICENSE).
+
+More: [docs/STATUS.md](docs/STATUS.md) for current state, [AGENTS.md](AGENTS.md) for agents.
 
 
